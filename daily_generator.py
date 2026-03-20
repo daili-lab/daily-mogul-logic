@@ -4,43 +4,73 @@ import json
 import os
 from datetime import datetime
 
-# 1. 自动配置
+# 1. 自动化配置
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
 genai.configure(api_key=GEMINI_API_KEY)
 
+# 监控的“大鱼”列表
+STOCK_POOL = ["NVDA", "TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "BABA", "PDD", "COIN"]
+
 def get_market_data():
-    try:
-        stock = yf.Ticker("NVDA") # 先拿英伟达试手
-        hist = stock.history(period="2d")
-        current_close = hist['Close'].iloc[-1]
-        change_pct = ((current_close - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
-        return {"name": "英伟达", "ticker": "NVDA", "close": round(current_close, 2), "change": f"{round(change_pct, 2)}%"}
-    except:
-        return {"name": "美股大盘", "ticker": "SPY", "close": 500, "change": "1%"}
+    results = []
+    for ticker in STOCK_POOL:
+        try:
+            stock = yf.Ticker(ticker)
+            hist = stock.history(period="5d") # 多看几天趋势
+            info = stock.info
+            current_close = hist['Close'].iloc[-1]
+            prev_close = hist['Close'].iloc[-2]
+            change_pct = ((current_close - prev_close) / prev_close) * 100
+            
+            results.append({
+                "name": info.get('shortName', ticker),
+                "ticker": ticker,
+                "close": round(current_close, 2),
+                "change": f"{round(change_pct, 2)}%",
+                "trend": "向上突破" if change_pct > 0 else "向下试探"
+            })
+        except: continue
+    
+    # 挑选波动最大的那个作为今日“戏精”
+    if results:
+        return sorted(results, key=lambda x: abs(float(x['change'].replace('%',''))), reverse=True)[0]
+    return {"name": "纳指", "ticker": "QQQ", "close": 440, "change": "0.5%"}
 
 def generate_report(data):
-    # 2. 自动试错模型名，哪个能用用哪个
-    target_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
-    model = None
-    
-    for m_name in target_models:
-        try:
-            model = genai.GenerativeModel(m_name)
-            # 试着打个招呼
-            test_res = model.generate_content("hi")
-            if test_res: break
-        except:
-            continue
+    # 自动探测可用模型
+    model_name = 'gemini-1.5-flash'
+    try:
+        model = genai.GenerativeModel(model_name)
+    except:
+        model = genai.GenerativeModel('gemini-pro')
 
-    prompt = f"数据：{data['name']}涨跌{data['change']}。写一份给山沟少年的土味内参，只要JSON格式：{{'tian_shi':'...','di_li':'...','ren_he':'...'}}"
+    prompt = f"""
+    你是一个隐居山林的金融奇才，外号“草鞋索罗斯”。
+    今日监控到：{data['name']} ({data['ticker']}) 昨晚价格为 {data['close']}，涨跌幅为 {data['change']}。
+    
+    请写一份内容丰富的【土味内参】，要求包含以下板块（用土话讲干货）：
+    1. 【星象复盘】：用一种极其离奇的修辞描述昨晚的走势。
+    2. 【庄家心法】：分析为什么这帮“城里人”要这么拉升或砸盘（结合具体跌幅）。
+    3. 【致富玄学】：给出一个具体的“支撑价”或“压力位”，但要用土话（比如：村口歪脖子树的价格）。
+    4. 【今日忌宜】：宜做什么，忌做什么（比如：宜吃红薯补气，忌乱开杠杆）。
+    
+    字数要求：每个板块不少于50字。
+    必须返回纯JSON格式，禁止任何解释文字，结构如下：
+    {{
+      "headline": "...",
+      "xing_xiang": "...",
+      "zhuang_jia": "...",
+      "xuan_xue": "...",
+      "ji_yi": "..."
+    }}
+    """
     
     try:
         response = model.generate_content(prompt)
-        # 强制清理格式
         txt = response.text.strip().replace('```json', '').replace('```', '')
         return json.loads(txt)
-    except:
-        return {"tian_shi": "天干物燥，小心火烛。", "di_li": "地脉波动，宜守不宜攻。", "ren_he": "和气生财，莫与人争。"}
+    except Exception as e:
+        return {"headline": "天机不可泄露", "xing_xiang": "云里雾里看花。", "zhuang_jia": "深不可测。", "xuan_xue": "多看少动。", "ji_yi": "宜睡觉。"}
 
 def main():
     stock_data = get_market_data()

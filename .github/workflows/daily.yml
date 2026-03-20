@@ -1,0 +1,41 @@
+name: Daily Report & Gitee Sync
+
+on:
+  schedule:
+    - cron: '30 1 * * *' # 北京时间 09:30
+  workflow_dispatch: 
+
+jobs:
+  build-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install yfinance google-generativeai
+
+      - name: Run AI Generator
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python daily_generator.py
+
+      - name: Commit & Sync
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          git config --global user.name "MogulBot"
+          git config --global user.email "bot@mogul.com"
+          git add today.json
+          git commit -m "Update Report: $(date)" || exit 0
+          # 关键的通关密码已为你合成
+          REMOTE_URL="https://daili_gxy:${{ secrets.GITEE_TOKEN }}@gitee.com/daili_gxy/daily-mogul-data.git"
+          git remote add gitee $REMOTE_URL
+          git push gitee main --force

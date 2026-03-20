@@ -34,7 +34,7 @@ def get_market_data():
     return best_story_stock
 
 def generate_report(data):
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-pro')
     prompt = f"""
     角色：你是一个在山沟里修老手电筒、却偷偷通过收音机听行情、外号“扫地僧”的高人。
     数据：昨晚 {data['name']} ({data['ticker']}) 价格是 {data['close']}，涨跌幅为 {data['change']}。

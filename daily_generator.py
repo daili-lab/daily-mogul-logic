@@ -4,55 +4,46 @@ import json
 import os
 from datetime import datetime
 
-# 配置 Gemini
+# 1. 自动配置
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# 备选股票池（你可以随心增加）
-STOCK_POOL = ["NVDA", "TSLA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "BABA", "PDD"]
-
 def get_market_data():
-    best_story_stock = None
-    max_change = 0
-    for ticker in STOCK_POOL:
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="2d")
-            if len(hist) < 2: continue
-            prev_close = hist['Close'].iloc[-2]
-            current_close = hist['Close'].iloc[-1]
-            change_pct = ((current_close - prev_close) / prev_close) * 100
-            if abs(change_pct) > abs(max_change):
-                max_change = change_pct
-                best_story_stock = {
-                    "ticker": ticker, 
-                    "name": stock.info.get('shortName', ticker), 
-                    "close": round(current_close, 2), 
-                    "change": f"{round(change_pct, 2)}%"
-                }
-        except: continue
-    return best_story_stock
+    try:
+        stock = yf.Ticker("NVDA") # 先拿英伟达试手
+        hist = stock.history(period="2d")
+        current_close = hist['Close'].iloc[-1]
+        change_pct = ((current_close - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
+        return {"name": "英伟达", "ticker": "NVDA", "close": round(current_close, 2), "change": f"{round(change_pct, 2)}%"}
+    except:
+        return {"name": "美股大盘", "ticker": "SPY", "close": 500, "change": "1%"}
 
 def generate_report(data):
-    model = genai.GenerativeModel('gemini-pro')
-    prompt = f"""
-    角色：你是一个在山沟里修老手电筒、却偷偷通过收音机听行情、外号“扫地僧”的高人。
-    数据：昨晚 {data['name']} ({data['ticker']}) 价格是 {data['close']}，涨跌幅为 {data['change']}。
-    任务：写一份给村里卖了牛进城闯荡少年的“土味内参”。
-    要求：
-    1. 【天时】：吐槽昨晚这股的表现（用土话，如：像二踢脚、像霜打的茄子）。
-    2. 【地利】：给一个玄乎的看多理由和扎心的看空风险。
-    3. 【人和】：今日玄学小贴士（宜/忌）。
-    4. 严禁提到iPad、电脑等数码产品，要符合山沟少年的认知。
-    格式：必须只返回纯JSON格式，不要有任何多余文字，结构如下：{{"tian_shi": "...", "di_li": "...", "ren_he": "..."}}
-    """
-    response = model.generate_content(prompt)
-    clean_text = response.text.strip().replace('```json', '').replace('```', '')
-    return json.loads(clean_text)
+    # 2. 自动试错模型名，哪个能用用哪个
+    target_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    model = None
+    
+    for m_name in target_models:
+        try:
+            model = genai.GenerativeModel(m_name)
+            # 试着打个招呼
+            test_res = model.generate_content("hi")
+            if test_res: break
+        except:
+            continue
+
+    prompt = f"数据：{data['name']}涨跌{data['change']}。写一份给山沟少年的土味内参，只要JSON格式：{{'tian_shi':'...','di_li':'...','ren_he':'...'}}"
+    
+    try:
+        response = model.generate_content(prompt)
+        # 强制清理格式
+        txt = response.text.strip().replace('```json', '').replace('```', '')
+        return json.loads(txt)
+    except:
+        return {"tian_shi": "天干物燥，小心火烛。", "di_li": "地脉波动，宜守不宜攻。", "ren_he": "和气生财，莫与人争。"}
 
 def main():
     stock_data = get_market_data()
-    if not stock_data: return
     report_content = generate_report(stock_data)
     final_output = {
         "date": datetime.now().strftime("%Y-%m-%d"),

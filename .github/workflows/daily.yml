@@ -20,7 +20,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install yfinance google-generativeai
+        run: pip install --upgrade yfinance google-generativeai
 
       - name: Run AI Generator
         env:
